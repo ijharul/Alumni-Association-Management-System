@@ -20,75 +20,75 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please add a password'],
       minlength: 6,
-      select: false, // Do not return password by default
+      select: false,
     },
     role: {
       type: String,
-      enum: ['Student', 'Alumni', 'Admin'],
-      default: 'Student',
+      enum: ['student', 'alumni', 'collegeAdmin', 'superAdmin'],
+      default: 'student',
     },
-    bio: {
+    // Multi-tenant: which college this user belongs to
+    collegeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'College',
+      default: null,
+    },
+    // Subscription
+    plan: {
       type: String,
-      default: '',
+      enum: ['Free', 'Monthly', 'Yearly'],
+      default: 'Free',
     },
-    skills: {
-      type: [String],
-      default: [],
+    tokens: {
+      type: Number,
+      default: 50,
     },
-    company: {
-      type: String,
-    },
-    college: {
-      type: String,
-    },
-    currentRole: {
-      type: String,
-    },
+    // Common profile fields
+    bio: { type: String, default: '' },
+    skills: { type: [String], default: [] },
+    profilePicture: { type: String, default: '' },
+    resume: { type: String, default: '' },
+    // For users whose college is not in the list
+    pendingCollege: { type: String, default: '' },
+    // Alumni approval by collegeAdmin
+    isApproved: { type: Boolean, default: true },  // true by default; set false to pend review
+    // Experience + Projects (rich arrays)
     experience: [
       {
         role: String,
         company: String,
         duration: String,
         description: String,
-      }
+      },
     ],
     projects: [
       {
         title: String,
         techStack: [String],
         description: String,
-      }
+      },
     ],
-    batch: {
-      type: Number,
-    },
-    profilePicture: {
-      type: String,
-      default: '',
-    },
-    resume: {
-      type: String,
-      default: '',
-    },
+    // Student-specific fields
+    branch: { type: String, default: '' },
+    year: { type: Number },
+    careerGoal: { type: String, default: '' },
+    // Alumni / shared fields
+    company: { type: String, default: '' },
+    currentRole: { type: String, default: '' },
+    college: { type: String, default: '' },  // legacy text field kept for backward compat
+    batch: { type: Number },
   },
-  {
-    timestamps: true, // Automatically manages createdAt and updatedAt
-  }
+  { timestamps: true }
 );
 
-// Encrypt password using bcryptjs before saving
+// Hash password before save
 userSchema.pre('save', async function (next) {
-  // Only hash if the password was actually modified
-  if (!this.isModified('password')) {
-    return next();
-  }
-  
+  if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// Method to verify matched user password
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };

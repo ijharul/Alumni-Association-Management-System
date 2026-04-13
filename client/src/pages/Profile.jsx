@@ -1,16 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { Upload, User, Save, Plus, Trash2, Briefcase, GitBranch } from 'lucide-react';
+import { Upload, User, Save, Plus, Trash2, Briefcase, GitBranch, Camera } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { AuthContext } from '../contexts/AuthContext';
 
 const Profile = () => {
+  const { setUser } = useContext(AuthContext);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState(null);         // resume PDF
+  const [avatarFile, setAvatarFile] = useState(null);  // profile picture
+  const [avatarPreview, setAvatarPreview] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -59,6 +63,13 @@ const Profile = () => {
     setFile(e.target.files[0]);
   };
 
+  const handleAvatarChange = (e) => {
+    const selected = e.target.files[0];
+    if (!selected) return;
+    setAvatarFile(selected);
+    setAvatarPreview(URL.createObjectURL(selected));
+  };
+
   // Generic Array manipulators
   const handleAddArrayItem = (key, defaultObj) => {
     setFormData({ ...formData, [key]: [...formData[key], defaultObj] });
@@ -79,7 +90,27 @@ const Profile = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    
+
+    // If a new avatar was selected, upload it first
+    if (avatarFile) {
+      try {
+        const avatarData = new FormData();
+        avatarData.append('file', avatarFile);
+        const { data } = await api.put('/users/profile', avatarData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setProfile((prev) => ({ ...prev, profilePicture: data.profilePicture }));
+        // Sync sidebar avatar immediately
+        setUser((prev) => ({ ...prev, profilePicture: data.profilePicture }));
+        setAvatarFile(null);
+        setAvatarPreview(null);
+        toast.success('Profile picture updated!');
+      } catch (err) {
+        toast.error('Failed to upload profile picture.');
+      }
+    }
+
+    // Upload profile fields + optional resume
     const updateData = new FormData();
     updateData.append('name', formData.name);
     updateData.append('bio', formData.bio);
@@ -88,56 +119,98 @@ const Profile = () => {
     updateData.append('currentRole', formData.currentRole);
     updateData.append('skills', formData.skills);
     if (formData.batch) updateData.append('batch', formData.batch);
-    if (file) updateData.append('resume', file);
-    
-    // Explicitly stringify the massive object arrays preventing multipart/form-data corruption natively.
+    if (file) updateData.append('file', file);
     updateData.append('experience', JSON.stringify(formData.experience));
     updateData.append('projects', JSON.stringify(formData.projects));
 
     try {
       const { data } = await api.put('/users/profile', updateData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       setProfile(data);
-      toast.success('Profile arrays synchronized actively!');
+      // Persist name change to sidebar
+      setUser((prev) => ({ ...prev, name: data.name, profilePicture: data.profilePicture }));
+      toast.success('Profile saved successfully!');
       setFile(null);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Error updating profile structure');
+      toast.error(error.response?.data?.message || 'Error saving profile.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading your metadata array...</div>;
+  if (loading) return <div className="p-8 text-center text-slate-500 dark:text-slate-400">Loading your metadata array...</div>;
+
+  // Avatar display: preview (new upload) > saved URL > null
+  const avatarSrc = avatarPreview || profile?.profilePicture || null;
+  const initials = formData.name
+    ? formData.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+    : '?';
 
   return (
     <div className="max-w-4xl mx-auto w-full pb-10 space-y-6">
-      
-      {/* 1. Generic Profile Block */}
+
+      {/* ── Profile Picture Card ── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-             <User className="h-5 w-5 text-indigo-500" /> Executive Identity Metrics
+            <Camera className="h-5 w-5 text-indigo-500 dark:text-purple-400" /> Profile Picture
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-6">
+            {/* Avatar */}
+            <div className="relative shrink-0">
+              <div className="w-24 h-24 rounded-full overflow-hidden ring-4 ring-indigo-100 dark:ring-slate-700 bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-white text-2xl font-bold">{initials}</span>
+                )}
+              </div>
+              {/* Small camera button overlay */}
+              <label className="absolute bottom-0 right-0 w-7 h-7 bg-indigo-600 dark:bg-purple-600 rounded-full flex items-center justify-center cursor-pointer shadow-lg hover:bg-indigo-700 dark:hover:bg-purple-700 transition-colors">
+                <Camera className="w-3.5 h-3.5 text-white" />
+                <input type="file" accept="image/*" className="sr-only" onChange={handleAvatarChange} />
+              </label>
+            </div>
+            {/* Instructions */}
+            <div>
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Upload a profile photo</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">PNG, JPG or WebP · Max 5MB · Square recommended</p>
+              {avatarFile && (
+                <p className="text-xs text-indigo-600 dark:text-purple-400 font-medium mt-2">
+                  ✓ {avatarFile.name} — will be saved on submit
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Identity Fields Card ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+             <User className="h-5 w-5 text-indigo-500 dark:text-purple-400" /> Profile Details
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
               <div className="sm:col-span-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Display Name</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Display Name</label>
                 <Input type="text" name="name" value={formData.name} onChange={handleChange} />
               </div>
 
               <div className="sm:col-span-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Graduating Cohort / Year</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Graduating Cohort / Year</label>
                 <Input type="number" name="batch" value={formData.batch} onChange={handleChange} />
               </div>
 
               <div className="sm:col-span-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Current Role</label>
-                <select name="currentRole" value={formData.currentRole} onChange={handleChange} className="block w-full rounded-lg border-0 py-2.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 transition-all appearance-none cursor-pointer bg-white">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Current Role</label>
+                <select name="currentRole" value={formData.currentRole} onChange={handleChange} className="block w-full rounded-lg border-0 py-2.5 px-3 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-purple-500 sm:text-sm sm:leading-6 transition-all appearance-none cursor-pointer bg-white dark:bg-slate-900">
                   <option value="">Select current scope</option>
                   <option value="student">Student</option>
                   <option value="intern">Intern</option>
@@ -147,31 +220,31 @@ const Profile = () => {
               </div>
 
               <div className="sm:col-span-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Institution / College</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Institution / College</label>
                 <Input type="text" name="college" placeholder="e.g. Stanford University" value={formData.college} onChange={handleChange} />
               </div>
 
                <div className="sm:col-span-6">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Current Associated Company</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Current Associated Company</label>
                 <Input type="text" name="company" placeholder="e.g. Google, Target, Meta" value={formData.company} onChange={handleChange} />
               </div>
 
               <div className="sm:col-span-6">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Bio Overview Array</label>
-                <textarea name="bio" rows={3} value={formData.bio} onChange={handleChange} className="block w-full rounded-lg border-0 py-2.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm transition-all" placeholder="Quantify your life parameters..." />
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Bio Overview Array</label>
+                <textarea name="bio" rows={3} value={formData.bio} onChange={handleChange} className="block w-full rounded-lg border-0 py-2.5 px-3 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-600 dark:focus:ring-purple-500 sm:text-sm transition-all bg-white dark:bg-slate-900 placeholder-gray-400 dark:placeholder-gray-500" placeholder="Quantify your life parameters..." />
               </div>
 
               <div className="sm:col-span-6">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Capabilities / Skills (Comma separated)</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Capabilities / Skills (Comma separated)</label>
                 <Input type="text" name="skills" value={formData.skills} onChange={handleChange} placeholder="React, Node.js, Python, AWS" />
               </div>
             </div>
             
             {/* Extended Nested Array Sections */}
             
-            <div className="pt-6 border-t border-slate-100">
+            <div className="pt-6 border-t border-slate-100 dark:border-slate-700">
                <div className="flex justify-between items-center mb-4">
-                  <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Briefcase className="h-4 w-4 text-brand-500" /> Career Experience Arrays</h4>
+                  <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2"><Briefcase className="h-4 w-4 text-indigo-500 dark:text-purple-400" /> Career Experience Arrays</h4>
                   <Button type="button" variant="outline" size="sm" onClick={() => handleAddArrayItem('experience', { role: '', company: '', duration: '', description: '' })}>
                      <Plus className="h-4 w-4 mr-1" /> Add Path
                   </Button>
@@ -179,32 +252,32 @@ const Profile = () => {
                
                <div className="space-y-4">
                   {formData.experience.map((exp, index) => (
-                     <div key={index} className="p-4 bg-slate-50 border border-slate-200 rounded-xl relative">
-                        <button type="button" className="absolute top-4 right-4 text-slate-400 hover:text-red-500" onClick={() => handleRemoveArrayItem('experience', index)}><Trash2 className="h-4 w-4"/></button>
+                     <div key={index} className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl relative">
+                        <button type="button" className="absolute top-4 right-4 text-slate-400 hover:text-red-500 dark:hover:text-red-400" onClick={() => handleRemoveArrayItem('experience', index)}><Trash2 className="h-4 w-4"/></button>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pr-8">
                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 uppercase">Role</label>
-                              <input type="text" value={exp.role} onChange={e => handleArrayChange('experience', index, 'role', e.target.value)} className="mt-1 w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2" placeholder="Frontend Engineer" />
+                              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Role</label>
+                              <input type="text" value={exp.role} onChange={e => handleArrayChange('experience', index, 'role', e.target.value)} className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" placeholder="Frontend Engineer" />
                            </div>
                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 uppercase">Company</label>
-                              <input type="text" value={exp.company} onChange={e => handleArrayChange('experience', index, 'company', e.target.value)} className="mt-1 w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2" />
+                              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Company</label>
+                              <input type="text" value={exp.company} onChange={e => handleArrayChange('experience', index, 'company', e.target.value)} className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" />
                            </div>
                            <div className="sm:col-span-2">
-                              <label className="block text-xs font-semibold text-slate-500 uppercase">Duration & Description</label>
-                              <input type="text" value={exp.duration} onChange={e => handleArrayChange('experience', index, 'duration', e.target.value)} className="mt-1 w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2 mb-2" placeholder="e.g. May 2021 - Present" />
-                              <textarea rows={2} value={exp.description} onChange={e => handleArrayChange('experience', index, 'description', e.target.value)} className="w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2" placeholder="..." />
+                              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Duration & Description</label>
+                              <input type="text" value={exp.duration} onChange={e => handleArrayChange('experience', index, 'duration', e.target.value)} className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 mb-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" placeholder="e.g. May 2021 - Present" />
+                              <textarea rows={2} value={exp.description} onChange={e => handleArrayChange('experience', index, 'description', e.target.value)} className="w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" placeholder="..." />
                            </div>
                         </div>
                      </div>
                   ))}
-                  {formData.experience.length === 0 && <p className="text-sm text-slate-500 italic">No historical nodes detected.</p>}
+                  {formData.experience.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400 italic">No historical nodes detected.</p>}
                </div>
             </div>
 
-            <div className="pt-6 border-t border-slate-100">
+            <div className="pt-6 border-t border-slate-100 dark:border-slate-700">
                <div className="flex justify-between items-center mb-4">
-                  <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2"><GitBranch className="h-4 w-4 text-brand-500" /> Open Source / Project Nodes</h4>
+                  <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2"><GitBranch className="h-4 w-4 text-indigo-500 dark:text-purple-400" /> Open Source / Project Nodes</h4>
                   <Button type="button" variant="outline" size="sm" onClick={() => handleAddArrayItem('projects', { title: '', techStack: [], description: '' })}>
                      <Plus className="h-4 w-4 mr-1" /> Add Project
                   </Button>
@@ -212,50 +285,50 @@ const Profile = () => {
                
                <div className="space-y-4">
                   {formData.projects.map((proj, index) => (
-                     <div key={index} className="p-4 bg-slate-50 border border-slate-200 rounded-xl relative">
-                        <button type="button" className="absolute top-4 right-4 text-slate-400 hover:text-red-500" onClick={() => handleRemoveArrayItem('projects', index)}><Trash2 className="h-4 w-4"/></button>
+                     <div key={index} className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl relative">
+                        <button type="button" className="absolute top-4 right-4 text-slate-400 hover:text-red-500 dark:hover:text-red-400" onClick={() => handleRemoveArrayItem('projects', index)}><Trash2 className="h-4 w-4"/></button>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pr-8">
                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 uppercase">Project Title</label>
-                              <input type="text" value={proj.title} onChange={e => handleArrayChange('projects', index, 'title', e.target.value)} className="mt-1 w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2" />
+                              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Project Title</label>
+                              <input type="text" value={proj.title} onChange={e => handleArrayChange('projects', index, 'title', e.target.value)} className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" />
                            </div>
                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 uppercase">Tech Stack (Comma Separated Arrays)</label>
-                              <input type="text" value={Array.isArray(proj.techStack) ? proj.techStack.join(', ') : proj.techStack} onChange={e => handleArrayChange('projects', index, 'techStack', e.target.value.split(',').map(s=>s.trim()))} className="mt-1 w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2" placeholder="React, Express, Redis" />
+                              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Tech Stack (Comma Separated Arrays)</label>
+                              <input type="text" value={Array.isArray(proj.techStack) ? proj.techStack.join(', ') : proj.techStack} onChange={e => handleArrayChange('projects', index, 'techStack', e.target.value.split(',').map(s=>s.trim()))} className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" placeholder="React, Express, Redis" />
                            </div>
                            <div className="sm:col-span-2">
-                              <label className="block text-xs font-semibold text-slate-500 uppercase">Impact Abstract</label>
-                              <textarea rows={2} value={proj.description} onChange={e => handleArrayChange('projects', index, 'description', e.target.value)} className="mt-1 w-full rounded border-slate-300 shadow-sm sm:text-sm py-1.5 px-2" />
+                              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Impact Abstract</label>
+                              <textarea rows={2} value={proj.description} onChange={e => handleArrayChange('projects', index, 'description', e.target.value)} className="mt-1 w-full rounded border-slate-300 dark:border-slate-600 shadow-sm sm:text-sm py-1.5 px-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 dark:focus:ring-purple-500" />
                            </div>
                         </div>
                      </div>
                   ))}
-                  {formData.projects.length === 0 && <p className="text-sm text-slate-500 italic">No structural project vectors identified.</p>}
+                  {formData.projects.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400 italic">No structural project vectors identified.</p>}
                </div>
             </div>
 
-            <div className="pt-6 border-t border-slate-100">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Resume Core Override (PDF Only)</label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
+            <div className="pt-6 border-t border-slate-100 dark:border-slate-700">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Resume Core Override (PDF Only)</label>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-xl bg-slate-50 dark:bg-slate-800/20 hover:bg-slate-100 dark:hover:bg-slate-800/40 transition-colors">
                   <div className="space-y-1 text-center">
-                    <Upload className="mx-auto h-12 w-12 text-slate-400" />
-                    <div className="flex text-sm text-slate-600 justify-center">
-                      <label className="relative cursor-pointer rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
+                    <Upload className="mx-auto h-12 w-12 text-slate-400 dark:text-slate-500" />
+                    <div className="flex text-sm text-slate-600 dark:text-slate-400 justify-center">
+                      <label className="relative cursor-pointer rounded-md font-medium text-indigo-600 dark:text-purple-400 hover:text-indigo-500 focus-within:outline-none">
                         <span>Upload an active file vector</span>
                         <input name="resume" type="file" accept="application/pdf" className="sr-only" onChange={handleFileChange} />
                       </label>
                     </div>
-                    {file && <p className="text-xs text-green-600 font-semibold">{file.name} queued internally</p>}
+                    {file && <p className="text-xs text-green-600 dark:text-green-400 font-semibold">{file.name} queued internally</p>}
                   </div>
                 </div>
                 {profile?.resume && (
                    <p className="mt-3 text-sm flex items-center gap-2">
-                      <span className="font-semibold text-slate-700">Currently Parsed PDF:</span> <a href={profile.resume} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">Inspect Node</a>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">Currently Parsed PDF:</span> <a href={profile.resume} target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-purple-400 hover:underline">Inspect Node</a>
                    </p>
                 )}
             </div>
 
-            <div className="pt-6 mt-6 border-t border-slate-100 flex justify-end">
+            <div className="pt-6 mt-6 border-t border-slate-100 dark:border-slate-700 flex justify-end">
               <Button type="submit" isLoading={saving} size="lg">
                 <Save className="h-4 w-4 mr-2" />
                 Overwrite Global Memory Hash

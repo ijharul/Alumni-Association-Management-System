@@ -3,13 +3,19 @@ import multer from 'multer';
 // Use memory storage to process uploads directly from the buffer
 const storage = multer.memoryStorage();
 
-// File limitation and validation filter
+// Accept both PDFs (resume) and images (profile picture)
 const fileFilter = (req, file, cb) => {
-  // Allow only PDF documents
-  if (file.mimetype === 'application/pdf') {
+  const allowedMimeTypes = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+  ];
+  if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Only PDF format is allowed for resume uploads!'), false);
+    cb(new Error('Only PDF and image files (JPEG, PNG, WebP) are allowed!'), false);
   }
 };
 
@@ -17,7 +23,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 2 * 1024 * 1024, // 2 MB limit max size
+    fileSize: 5 * 1024 * 1024, // 5 MB limit
   },
 });
 

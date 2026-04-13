@@ -1,31 +1,36 @@
 import React from 'react';
 
-const Input = React.forwardRef(({ 
-  className = '', 
+const Input = React.forwardRef(({
+  className = '',
   icon: Icon,
   error,
-  ...props 
+  ...props
 }, ref) => {
   return (
     <div className="w-full relative">
       {Icon && (
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500 dark:text-gray-400 focus-within:text-indigo-600 dark:focus-within:text-purple-400">
-          <Icon className="h-5 w-5" aria-hidden="true" />
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
+          <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
         </div>
       )}
       <input
         ref={ref}
         className={`
-          block w-full rounded-lg border-0 py-2.5 shadow-sm ring-1 ring-inset 
-          text-gray-800 bg-white dark:text-gray-200 dark:bg-slate-900 
-          ${error ? 'ring-red-500 focus:ring-red-500' : 'ring-gray-300 dark:ring-slate-700 focus:ring-indigo-600 dark:focus:ring-purple-500'} 
-          focus:ring-2 focus:ring-inset text-sm sm:leading-6 transition-all
-          ${Icon ? 'pl-10' : 'pl-3'}
+          block w-full rounded-lg border py-2.5 text-sm transition-all
+          bg-white dark:bg-slate-800
+          text-slate-900 dark:text-slate-100
+          placeholder-slate-400 dark:placeholder-slate-500
+          ${error
+            ? 'border-red-400 focus:ring-red-400 focus:border-red-400'
+            : 'border-sky-200 dark:border-slate-600 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-sky-500 dark:focus:border-sky-400'
+          }
+          focus:outline-none focus:ring-2
+          ${Icon ? 'pl-10 pr-3' : 'px-3'}
           ${className}
         `}
         {...props}
       />
-      {error && <p className="mt-1.5 text-sm text-red-600 font-medium">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-red-500 font-medium">{error}</p>}
     </div>
   );
 });
